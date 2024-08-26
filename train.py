@@ -109,7 +109,7 @@ def main():
         test(epoch, net, testloader, criterion, device)
 
         # Save checkpoint
-        acc = 100.*correct/total
+        acc = 100.*correct / total
         if acc > best_acc:
             print('Saving checkpoint...')
             state = {
