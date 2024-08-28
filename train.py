@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
+from PIL import Image
+from torch.utils.data import Dataset
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -86,19 +88,17 @@ def validate(net, valloader, criterion, device):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
 
-            # Debugging: Print output stats
-            print(
-                f'Batch {batch_idx}: Outputs min: {outputs.min().item()}, max: {outputs.max().item()}, mean: {outputs.mean().item()}')
-            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                print("Found NaN or Inf in the outputs during validation!")
-
             loss = criterion(outputs, targets)
             total_loss += loss.item()
             _, predicted = outputs.max(1)
+
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
             if batch_idx % 10 == 0:
-                print(f'Epoch: [][{batch_idx}/{len(valloader)}] '
+                print(predicted)
+                print('-------------')
+                print(targets)
+                print(f'[{batch_idx}/{len(valloader)}] '
                       f'XE Loss {loss.item():.4e} '
                       f'Acc {100. * correct / total:.2f}%')
     acc = 100. * correct / total
@@ -147,11 +147,11 @@ def train(epoch, net, trainloader, optimizer, criterion, device, lambda_paramete
         # if torch.isnan(outputs).any() or torch.isinf(outputs).any():
         #     print("Found NaN or Inf in the outputs during training!")
 
-        # _, top2 = outputs.topk(2, dim=1)
+        _, top2 = outputs.topk(2, dim=1)
 
-        # icel_loss = icel_calculation(inputs, hi_res_cam, top2)
-        icel_loss =0
-        loss = criterion(outputs, targets)
+        icel_loss = icel_calculation(inputs, hi_res_cam, top2)
+        # icel_loss =0
+        loss = criterion(outputs, targets) + lambda_parameter * icel_loss
 
         optimizer.zero_grad()
         loss.backward()
@@ -166,6 +166,7 @@ def train(epoch, net, trainloader, optimizer, criterion, device, lambda_paramete
             print(f'Epoch: [{epoch}][{batch_idx}/{len(trainloader)}] {predicted.eq(targets).sum().item()} '
                   f'Time: {batch_time:.3f} ({time.time() - start_time:.3f})  '
                   f'XE Loss {loss.item():.4e} '
+                  f'ICEL Loss { lambda_parameter * icel_loss.item():.4e} '
                   f'Acc {100. * correct / total:.2f}%')
 
             # Log to TensorBoard
@@ -186,13 +187,6 @@ def test(epoch, net, testloader, criterion, device, writer):
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
-
-            # Debugging: Print output stats
-            print(
-                f'Batch {batch_idx}: Outputs min: {outputs.min().item()}, max: {outputs.max().item()}, mean: {outputs.mean().item()}')
-            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                print("Found NaN or Inf in the outputs during testing!")
-
             loss = criterion(outputs, targets)
             total_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -213,7 +207,7 @@ def test(epoch, net, testloader, criterion, device, writer):
 
 def main():
     args = parse_args()
-    writer = SummaryWriter(log_dir='./logs/tiny200-ce-test')
+    writer = SummaryWriter(log_dir='./logs/tiny200-icel-test')
 
     seed_everything(args.seed)
 
@@ -221,32 +215,6 @@ def main():
     print(device)
     best_acc = 0
     start_epoch = 0
-
-
-
-
-
-    # transform_train = transforms.Compose([
-    #     transforms.RandomResizedCrop(size=224),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    # ])
-    #
-    # transform_test = transforms.Compose([
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    # ])
-
-
-
-    # Define your transforms (same as transform_train in your original code)
-
-
-
-
-
-
-
 
     # Transforms for training
     transform_train = transforms.Compose([
@@ -262,24 +230,22 @@ def main():
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
 
-    # Training dataset and loader
-    # trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
-    # trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
-    #                          pin_memory=True, worker_init_fn=seed_worker)
-
-    # Test dataset and loader
-    # testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-    # testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
-    #                         pin_memory=True)
-
     trainset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/train', transform=transform_train)
     trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
                              pin_memory=True, worker_init_fn=seed_worker)
+
     save_images_from_dataloader(trainloader, 'sample_train_images.png')
+    #
+    # testset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/val', transform=transform_test)
+    # testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
+    #                         pin_memory=True, worker_init_fn=seed_worker)
 
-    # Save a sample of images from the training set
+    wnid_to_label = {wnid: i for i, wnid in enumerate(trainset.classes)}
 
-    testset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/val', transform=transform_test)
+    # Load validation data using custom dataset
+    val_annotations_file = os.path.join(args.data_dir, 'val', 'val_annotations.txt')
+    val_img_dir = os.path.join(args.data_dir, 'val', 'images')
+    testset = TinyImageNetValDataset(val_annotations_file, val_img_dir, wnid_to_label, transform=transform_test)
     testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
                             pin_memory=True, worker_init_fn=seed_worker)
 
@@ -322,6 +288,30 @@ def main():
         if acc > best_acc:
             best_acc = acc
         scheduler.step()
+
+
+class TinyImageNetValDataset(Dataset):
+    def __init__(self, annotations_file, img_dir, wnid_to_label, transform=None):
+        self.img_labels = []
+        with open(annotations_file, 'r') as f:
+            for line in f:
+                img_file, wnid = line.split('\t')[:2]
+                label = wnid_to_label[wnid]
+                self.img_labels.append((img_file, label))
+
+        self.img_dir = img_dir
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.img_labels)
+
+    def __getitem__(self, idx):
+        img_path = os.path.join(self.img_dir, self.img_labels[idx][0])
+        image = Image.open(img_path).convert("RGB")
+        label = self.img_labels[idx][1]
+        if self.transform:
+            image = self.transform(image)
+        return image, label
 
 
 if __name__ == '__main__':
