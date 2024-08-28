@@ -213,7 +213,7 @@ def test(epoch, net, testloader, criterion, device, writer):
 
 def main():
     args = parse_args()
-    writer = SummaryWriter(log_dir='./logs/cifar-ce-test')
+    writer = SummaryWriter(log_dir='./logs/tiny200-ce-test')
 
     seed_everything(args.seed)
 
@@ -237,15 +237,7 @@ def main():
     #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     # ])
 
-    # trainset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/train', transform=transform_train)
-    # trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
-    #                          pin_memory=True, worker_init_fn=seed_worker)
 
-    # Save a sample of images from the training set
-
-    # testset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/val', transform=transform_test)
-    # testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
-    #                         pin_memory=True, worker_init_fn=seed_worker)
 
     # Define your transforms (same as transform_train in your original code)
 
@@ -271,17 +263,27 @@ def main():
     ])
 
     # Training dataset and loader
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+    # trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+    # trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
+    #                          pin_memory=True, worker_init_fn=seed_worker)
+
+    # Test dataset and loader
+    # testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    # testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
+    #                         pin_memory=True)
+
+    trainset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/train', transform=transform_train)
     trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
                              pin_memory=True, worker_init_fn=seed_worker)
     save_images_from_dataloader(trainloader, 'sample_train_images.png')
 
-    # Test dataset and loader
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-    testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
-                            pin_memory=True)
+    # Save a sample of images from the training set
 
-    net = resnet18(pretrained=False, num_classes=10)
+    testset = torchvision.datasets.ImageFolder(root=f'{args.data_dir}/val', transform=transform_test)
+    testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
+                            pin_memory=True, worker_init_fn=seed_worker)
+
+    net = resnet18(pretrained=False, num_classes=200)
     net = net.to(device)
 
     if args.resume or args.validate:
